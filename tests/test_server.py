@@ -14,11 +14,21 @@ from .conftest import (
 )
 
 
+@pytest.fixture(autouse=True)
+def mock_access_token():
+    """Make _get_access_token return a test token for all tool tests."""
+    with patch("whoop_mcp.server._get_access_token", return_value="test_token"):
+        yield
+
+
 @pytest.fixture
 def mock_client():
-    """Patch _get_client to return a mock WhoopClient."""
+    """Patch WhoopClient to return a mock."""
     client = AsyncMock()
-    with patch("whoop_mcp.server._get_client", return_value=client):
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("whoop_mcp.server.WhoopClient", return_value=client):
         yield client
 
 

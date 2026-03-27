@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import pytest
-import respx
 
-from whoop_mcp.client import BASE_URL, TOKEN_URL, WhoopClient
+from whoop_mcp.client import WhoopClient
 
 
 SAMPLE_PROFILE = {
@@ -86,31 +85,7 @@ SAMPLE_WORKOUT = {
     },
 }
 
-SAMPLE_TOKEN_RESPONSE = {
-    "access_token": "new_access_token",
-    "refresh_token": "new_refresh_token",
-    "token_type": "Bearer",
-    "expires_in": 3600,
-}
-
 
 @pytest.fixture
 def whoop_client():
-    return WhoopClient(
-        access_token="test_access_token",
-        refresh_token="test_refresh_token",
-        client_id="test_client_id",
-        client_secret="test_client_secret",
-    )
-
-
-@pytest.fixture
-def mock_api():
-    with respx.mock(base_url=BASE_URL) as api_mock:
-        yield api_mock
-
-
-@pytest.fixture
-def mock_token():
-    with respx.mock(base_url="") as token_mock:
-        yield token_mock
+    return WhoopClient(access_token="test_access_token")

@@ -12,7 +12,7 @@ primary_region = 'cdg'
   MCP_TRANSPORT = 'http'
   MCP_HOST = '0.0.0.0'
   MCP_PORT = '8080'
-  BASE_URL = 'https://whoop-mcp-falling-dust-2905.fly.dev'
+  BASE_URL = 'https://whoop.anas.link'
 
 [http_service]
   internal_port = 8080

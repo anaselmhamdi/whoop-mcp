@@ -6,20 +6,12 @@ import respx
 
 from whoop_mcp.client import (
     BASE_URL,
-    TOKEN_URL,
     WhoopAPIError,
-    WhoopAuthError,
     WhoopClient,
     WhoopRateLimitError,
 )
 
-from .conftest import (
-    SAMPLE_CYCLE,
-    SAMPLE_TOKEN_RESPONSE,
-)
-
-
-# ── Basic GET ────────────────────────────────────────────────────────────
+from .conftest import SAMPLE_CYCLE
 
 
 @pytest.mark.asyncio
@@ -49,50 +41,6 @@ async def test_get_forwards_params(whoop_client: WhoopClient):
     assert "limit=5" in str(request.url)
 
 
-# ── Auto-refresh on 401 ─────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_auto_refresh_on_401(whoop_client: WhoopClient):
-    call_count = 0
-
-    def side_effect(request: httpx.Request) -> httpx.Response:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return httpx.Response(401, json={"error": "Unauthorized"})
-        return httpx.Response(200, json={"user_id": 1})
-
-    with respx.mock(base_url=BASE_URL) as api_mock:
-        api_mock.get("/v1/user/profile/basic").mock(side_effect=side_effect)
-
-        with respx.mock(base_url="") as token_mock:
-            token_mock.post(TOKEN_URL).mock(
-                return_value=httpx.Response(200, json=SAMPLE_TOKEN_RESPONSE)
-            )
-            result = await whoop_client.get("/v1/user/profile/basic")
-
-    assert result == {"user_id": 1}
-    assert whoop_client.access_token == "new_access_token"
-    assert whoop_client.refresh_token == "new_refresh_token"
-
-
-# ── Refresh failure ──────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_refresh_failure_raises_auth_error(whoop_client: WhoopClient):
-    with respx.mock(base_url="") as token_mock:
-        token_mock.post(TOKEN_URL).mock(
-            return_value=httpx.Response(400, json={"error": "invalid_grant"})
-        )
-        with pytest.raises(WhoopAuthError, match="Token refresh failed"):
-            await whoop_client.refresh_access_token()
-
-
-# ── Pagination ───────────────────────────────────────────────────────────
-
-
 @pytest.mark.asyncio
 async def test_pagination_combines_records(whoop_client: WhoopClient):
     page1 = {"records": [SAMPLE_CYCLE], "next_token": "page2"}
@@ -115,9 +63,6 @@ async def test_pagination_combines_records(whoop_client: WhoopClient):
     assert call_count == 2
 
 
-# ── Rate limiting ────────────────────────────────────────────────────────
-
-
 @pytest.mark.asyncio
 async def test_rate_limit_raises_error(whoop_client: WhoopClient):
     with respx.mock(base_url=BASE_URL) as mock:
@@ -134,9 +79,6 @@ async def test_rate_limit_raises_error(whoop_client: WhoopClient):
             await whoop_client.get("/v1/cycle")
 
 
-# ── Generic API error ────────────────────────────────────────────────────
-
-
 @pytest.mark.asyncio
 async def test_api_error_raises(whoop_client: WhoopClient):
     with respx.mock(base_url=BASE_URL) as mock:
@@ -145,3 +87,9 @@ async def test_api_error_raises(whoop_client: WhoopClient):
         )
         with pytest.raises(WhoopAPIError, match="500"):
             await whoop_client.get("/v1/cycle")
+
+
+@pytest.mark.asyncio
+async def test_context_manager():
+    async with WhoopClient("token") as client:
+        assert client.access_token == "token"

@@ -1,101 +1,56 @@
 from __future__ import annotations
 
 import os
-import urllib.parse
 
-import httpx
 from dotenv import load_dotenv
 from fastmcp import FastMCP
-from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse
+from fastmcp.server.auth import AccessToken, OAuthProxy
+from fastmcp.server.dependencies import get_access_token
 
-from whoop_mcp.client import TOKEN_URL, WhoopClient
+from whoop_mcp.auth import WHOOP_SCOPES, WhoopTokenVerifier
+from whoop_mcp.client import WhoopClient
 
 load_dotenv()
 
 WHOOP_AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
-WHOOP_SCOPES = "read:profile read:body_measurement read:cycles read:recovery read:sleep read:workout offline"
-
-mcp = FastMCP("whoop-mcp")
-
-_client: WhoopClient | None = None
+WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
 
 
-def _get_client() -> WhoopClient:
-    global _client
-    if _client is None:
-        access_token = os.environ.get("WHOOP_ACCESS_TOKEN", "")
-        refresh_token = os.environ.get("WHOOP_REFRESH_TOKEN", "")
-        if not access_token or access_token == "your_access_token":
-            raise RuntimeError("Not authenticated. Visit /login to connect your WHOOP account.")
-        _client = WhoopClient(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            client_id=os.environ["WHOOP_CLIENT_ID"],
-            client_secret=os.environ["WHOOP_CLIENT_SECRET"],
-        )
-    return _client
+def _build_auth() -> OAuthProxy | None:
+    """Build OAuthProxy if running in HTTP mode with credentials."""
+    base_url = os.environ.get("BASE_URL")
+    client_id = os.environ.get("WHOOP_CLIENT_ID")
+    client_secret = os.environ.get("WHOOP_CLIENT_SECRET")
 
+    if not all([base_url, client_id, client_secret]):
+        return None
 
-def _get_base_url() -> str:
-    return os.environ.get("BASE_URL", "http://localhost:8080")
-
-
-# ── OAuth routes ─────────────────────────────────────────────────────────
-
-
-@mcp.custom_route("/login", methods=["GET"])
-async def login(request: Request):
-    callback_url = f"{_get_base_url()}/callback"
-    params = urllib.parse.urlencode({
-        "client_id": os.environ["WHOOP_CLIENT_ID"],
-        "redirect_uri": callback_url,
-        "response_type": "code",
-        "scope": WHOOP_SCOPES,
-        "state": "whoopauth1",
-    })
-    return RedirectResponse(f"{WHOOP_AUTH_URL}?{params}")
-
-
-@mcp.custom_route("/callback", methods=["GET"])
-async def callback(request: Request):
-    global _client
-
-    code = request.query_params.get("code")
-    error = request.query_params.get("error")
-
-    if error:
-        return HTMLResponse(f"<h1>Auth failed</h1><p>{error}: {request.query_params.get('error_description', '')}</p>", status_code=400)
-
-    if not code:
-        return HTMLResponse("<h1>Missing authorization code</h1>", status_code=400)
-
-    callback_url = f"{_get_base_url()}/callback"
-    async with httpx.AsyncClient() as http:
-        response = await http.post(
-            TOKEN_URL,
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "client_id": os.environ["WHOOP_CLIENT_ID"],
-                "client_secret": os.environ["WHOOP_CLIENT_SECRET"],
-                "redirect_uri": callback_url,
-            },
-        )
-
-    if response.status_code != 200:
-        return HTMLResponse(f"<h1>Token exchange failed</h1><pre>{response.text}</pre>", status_code=400)
-
-    body = response.json()
-
-    _client = WhoopClient(
-        access_token=body["access_token"],
-        refresh_token=body.get("refresh_token", ""),
-        client_id=os.environ["WHOOP_CLIENT_ID"],
-        client_secret=os.environ["WHOOP_CLIENT_SECRET"],
+    return OAuthProxy(
+        upstream_authorization_endpoint=WHOOP_AUTH_URL,
+        upstream_token_endpoint=WHOOP_TOKEN_URL,
+        upstream_client_id=client_id,
+        upstream_client_secret=client_secret,
+        token_verifier=WhoopTokenVerifier(),
+        base_url=base_url,
+        valid_scopes=WHOOP_SCOPES,
+        forward_pkce=False,
     )
 
-    return HTMLResponse("<h1>Connected to WHOOP!</h1><p>You can close this tab. The MCP server is ready.</p>")
+
+mcp = FastMCP("whoop-mcp", auth=_build_auth())
+
+
+def _get_access_token() -> str:
+    """Get the WHOOP access token from auth context or env var."""
+    token = get_access_token()
+    if token is not None:
+        return token.token
+
+    # Fallback for local stdio mode
+    access_token = os.environ.get("WHOOP_ACCESS_TOKEN", "")
+    if not access_token:
+        raise RuntimeError("Not authenticated.")
+    return access_token
 
 
 # ── User ─────────────────────────────────────────────────────────────────
@@ -104,13 +59,15 @@ async def callback(request: Request):
 @mcp.tool
 async def get_profile() -> dict:
     """Get the authenticated user's WHOOP profile (name, email)."""
-    return await _get_client().get("/v1/user/profile/basic")
+    async with WhoopClient(_get_access_token()) as client:
+        return await client.get("/v1/user/profile/basic")
 
 
 @mcp.tool
 async def get_body_measurement() -> dict:
     """Get the user's body measurements (height, weight, max heart rate)."""
-    return await _get_client().get("/v1/user/measurement/body")
+    async with WhoopClient(_get_access_token()) as client:
+        return await client.get("/v1/user/measurement/body")
 
 
 # ── Cycles ───────────────────────────────────────────────────────────────
@@ -129,18 +86,18 @@ async def get_cycles(
         end: ISO-8601 datetime to filter until.
         limit: Max number of records to return (default fetches all pages).
     """
-    client = _get_client()
     params = _build_list_params(start, end, limit)
-
-    if limit is not None:
-        return (await client.get("/v1/cycle", params)).get("records", [])
-    return await client.get_paginated("/v1/cycle", params)
+    async with WhoopClient(_get_access_token()) as client:
+        if limit is not None:
+            return (await client.get("/v1/cycle", params)).get("records", [])
+        return await client.get_paginated("/v1/cycle", params)
 
 
 @mcp.tool
 async def get_cycle_by_id(cycle_id: str) -> dict:
     """Get a single physiological cycle by its ID."""
-    return await _get_client().get(f"/v1/cycle/{cycle_id}")
+    async with WhoopClient(_get_access_token()) as client:
+        return await client.get(f"/v1/cycle/{cycle_id}")
 
 
 # ── Recovery ─────────────────────────────────────────────────────────────
@@ -159,18 +116,18 @@ async def get_recovery_collection(
         end: ISO-8601 datetime to filter until.
         limit: Max number of records to return (default fetches all pages).
     """
-    client = _get_client()
     params = _build_list_params(start, end, limit)
-
-    if limit is not None:
-        return (await client.get("/v1/recovery", params)).get("records", [])
-    return await client.get_paginated("/v1/recovery", params)
+    async with WhoopClient(_get_access_token()) as client:
+        if limit is not None:
+            return (await client.get("/v1/recovery", params)).get("records", [])
+        return await client.get_paginated("/v1/recovery", params)
 
 
 @mcp.tool
 async def get_recovery_by_id(cycle_id: str) -> dict:
     """Get a single recovery record by its associated cycle ID."""
-    return await _get_client().get(f"/v1/recovery/{cycle_id}")
+    async with WhoopClient(_get_access_token()) as client:
+        return await client.get(f"/v1/recovery/{cycle_id}")
 
 
 # ── Sleep ────────────────────────────────────────────────────────────────
@@ -189,18 +146,18 @@ async def get_sleep_collection(
         end: ISO-8601 datetime to filter until.
         limit: Max number of records to return (default fetches all pages).
     """
-    client = _get_client()
     params = _build_list_params(start, end, limit)
-
-    if limit is not None:
-        return (await client.get("/v1/sleep", params)).get("records", [])
-    return await client.get_paginated("/v1/sleep", params)
+    async with WhoopClient(_get_access_token()) as client:
+        if limit is not None:
+            return (await client.get("/v1/sleep", params)).get("records", [])
+        return await client.get_paginated("/v1/sleep", params)
 
 
 @mcp.tool
 async def get_sleep_by_id(sleep_id: str) -> dict:
     """Get a single sleep record by its ID."""
-    return await _get_client().get(f"/v1/sleep/{sleep_id}")
+    async with WhoopClient(_get_access_token()) as client:
+        return await client.get(f"/v1/sleep/{sleep_id}")
 
 
 # ── Workouts ─────────────────────────────────────────────────────────────
@@ -219,18 +176,18 @@ async def get_workout_collection(
         end: ISO-8601 datetime to filter until.
         limit: Max number of records to return (default fetches all pages).
     """
-    client = _get_client()
     params = _build_list_params(start, end, limit)
-
-    if limit is not None:
-        return (await client.get("/v1/workout", params)).get("records", [])
-    return await client.get_paginated("/v1/workout", params)
+    async with WhoopClient(_get_access_token()) as client:
+        if limit is not None:
+            return (await client.get("/v1/workout", params)).get("records", [])
+        return await client.get_paginated("/v1/workout", params)
 
 
 @mcp.tool
 async def get_workout_by_id(workout_id: str) -> dict:
     """Get a single workout by its ID."""
-    return await _get_client().get(f"/v1/workout/{workout_id}")
+    async with WhoopClient(_get_access_token()) as client:
+        return await client.get(f"/v1/workout/{workout_id}")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────

@@ -20,97 +20,41 @@ cd whoop-mcp
 uv sync
 ```
 
-## Configuration
-
-Copy `.env.example` to `.env` and fill in your WHOOP app credentials:
-
-```bash
-cp .env.example .env
-```
-
-```env
-WHOOP_CLIENT_ID=your_client_id
-WHOOP_CLIENT_SECRET=your_client_secret
-WHOOP_ACCESS_TOKEN=your_access_token
-WHOOP_REFRESH_TOKEN=your_refresh_token
-```
-
-The server automatically refreshes expired access tokens using your refresh token.
-
-### Getting Tokens
-
-There are two ways to obtain your OAuth tokens:
-
-**Option A: Via the deployed server (easiest)**
-
-If the server is deployed (see [Deployment](#deployment)), visit `/login` in your browser. This will walk you through WHOOP's OAuth flow and store the tokens automatically.
-
-**Option B: Manual OAuth flow**
-
-1. Go to [developer-dashboard.whoop.com](https://developer-dashboard.whoop.com) and create an app
-2. Set your redirect URI (e.g. `https://localhost`)
-3. Open the authorization URL in your browser:
-   ```
-   https://api.prod.whoop.com/oauth/oauth2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&response_type=code&scope=read:profile read:body_measurement read:cycles read:recovery read:sleep read:workout offline&state=whoopauth1
-   ```
-4. After authorizing, grab the `code` from the redirect URL and exchange it:
-   ```bash
-   curl -X POST https://api.prod.whoop.com/oauth/oauth2/token \
-     -d grant_type=authorization_code \
-     -d code=AUTH_CODE \
-     -d client_id=YOUR_CLIENT_ID \
-     -d client_secret=YOUR_CLIENT_SECRET \
-     -d redirect_uri=YOUR_REDIRECT_URI
-   ```
-5. Add the returned `access_token` and `refresh_token` to your `.env`
-
 ## Usage
 
-### Run locally
+### Remote (recommended)
 
-```bash
-uv run whoop-mcp
-```
+When deployed, the server uses FastMCP's OAuthProxy. Just add the URL to your MCP client — authentication happens automatically through WHOOP's OAuth flow.
 
-### Connect to Claude Desktop (local)
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "whoop": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/whoop-mcp", "whoop-mcp"],
-      "env": {
-        "WHOOP_CLIENT_ID": "your_client_id",
-        "WHOOP_CLIENT_SECRET": "your_client_secret",
-        "WHOOP_ACCESS_TOKEN": "your_access_token",
-        "WHOOP_REFRESH_TOKEN": "your_refresh_token"
-      }
-    }
-  }
-}
-```
-
-### Connect to Claude Desktop (remote)
-
-If deployed to Fly.io, point Claude Desktop at the remote URL:
-
-```json
-{
-  "mcpServers": {
-    "whoop": {
-      "type": "url",
+      "type": "http",
       "url": "https://your-app.fly.dev/mcp/"
     }
   }
 }
 ```
 
-### Connect to Claude Code
+On first connect, your browser will open for WHOOP login. After authorizing, the tools are available immediately.
 
-Add to `.claude/settings.json`:
+### Local
+
+For local development, provide a WHOOP access token via env var:
+
+```bash
+cp .env.example .env
+# Fill in WHOOP_CLIENT_ID, WHOOP_CLIENT_SECRET, WHOOP_ACCESS_TOKEN
+```
+
+```bash
+uv run whoop-mcp
+```
+
+**Claude Desktop** (local):
 
 ```json
 {
@@ -153,26 +97,23 @@ List tools accept optional parameters:
 
 ### Fly.io
 
-The server supports remote deployment with HTTP transport.
-
 1. Install [flyctl](https://fly.io/docs/flyctl/install/)
 2. Create the app:
    ```bash
    fly launch --no-deploy
    ```
-3. Set secrets from your `.env`:
+3. Set secrets:
    ```bash
    cat .env | fly secrets import
    ```
 4. Add your Fly.io app URL as a redirect URI in the [WHOOP developer dashboard](https://developer-dashboard.whoop.com):
    ```
-   https://your-app.fly.dev/callback
+   https://your-app.fly.dev/auth/callback
    ```
 5. Deploy:
    ```bash
    fly deploy
    ```
-6. Visit `https://your-app.fly.dev/login` to authenticate with WHOOP
 
 ### CI/CD
 
@@ -183,14 +124,6 @@ A GitHub Actions workflow (`.github/workflows/deploy.yml`) auto-deploys on push 
    fly tokens create deploy -x 999999h
    ```
 2. Add it as `FLY_API_TOKEN` in your GitHub repo's secrets (Settings > Secrets > Actions)
-
-## Refreshing Tokens
-
-The server auto-refreshes tokens during use. To manually refresh:
-
-```bash
-uv run python scripts/refresh_token.py
-```
 
 ## Development
 
