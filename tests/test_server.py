@@ -43,7 +43,7 @@ async def test_get_profile(mock_client):
 
     result = await get_profile()
     assert result == SAMPLE_PROFILE
-    mock_client.get.assert_called_once_with("/v1/user/profile/basic")
+    mock_client.get.assert_called_once_with("/v2/user/profile/basic")
 
 
 @pytest.mark.asyncio
@@ -54,7 +54,7 @@ async def test_get_body_measurement(mock_client):
 
     result = await get_body_measurement()
     assert result == SAMPLE_BODY_MEASUREMENT
-    mock_client.get.assert_called_once_with("/v1/user/measurement/body")
+    mock_client.get.assert_called_once_with("/v2/user/measurement/body")
 
 
 # ── Cycles ───────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ async def test_get_cycles_paginated(mock_client):
 
     result = await get_cycles()
     assert len(result) == 2
-    mock_client.get_paginated.assert_called_once_with("/v1/cycle", {})
+    mock_client.get_paginated.assert_called_once_with("/v2/cycle", {})
 
 
 @pytest.mark.asyncio
@@ -80,7 +80,7 @@ async def test_get_cycles_with_limit(mock_client):
     result = await get_cycles(start="2024-01-01T00:00:00.000Z", limit=5)
     assert result == [SAMPLE_CYCLE]
     mock_client.get.assert_called_once_with(
-        "/v1/cycle", {"start": "2024-01-01T00:00:00.000Z", "limit": 5}
+        "/v2/cycle", {"start": "2024-01-01T00:00:00.000Z", "limit": 5}
     )
 
 
@@ -92,7 +92,7 @@ async def test_get_cycle_by_id(mock_client):
 
     result = await get_cycle_by_id("abc-123")
     assert result == SAMPLE_CYCLE
-    mock_client.get.assert_called_once_with("/v1/cycle/abc-123")
+    mock_client.get.assert_called_once_with("/v2/cycle/abc-123")
 
 
 # ── Recovery ─────────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ async def test_get_recovery_by_id(mock_client):
 
     result = await get_recovery_by_id("12345")
     assert result == SAMPLE_RECOVERY
-    mock_client.get.assert_called_once_with("/v1/recovery/12345")
+    mock_client.get.assert_called_once_with("/v2/cycle/12345/recovery")
 
 
 # ── Sleep ────────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ async def test_get_sleep_by_id(mock_client):
 
     result = await get_sleep_by_id("sleep-abc")
     assert result == SAMPLE_SLEEP
-    mock_client.get.assert_called_once_with("/v1/sleep/sleep-abc")
+    mock_client.get.assert_called_once_with("/v2/activity/sleep/sleep-abc")
 
 
 # ── Workouts ─────────────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ async def test_get_workout_by_id(mock_client):
 
     result = await get_workout_by_id("workout-abc")
     assert result == SAMPLE_WORKOUT
-    mock_client.get.assert_called_once_with("/v1/workout/workout-abc")
+    mock_client.get.assert_called_once_with("/v2/activity/workout/workout-abc")
 
 
 # ── List tools with date filters ─────────────────────────────────────────
@@ -178,6 +178,6 @@ async def test_list_tool_passes_date_filters(mock_client):
 
     await get_sleep_collection(start="2024-01-01T00:00:00.000Z", end="2024-02-01T00:00:00.000Z")
     mock_client.get_paginated.assert_called_once_with(
-        "/v1/sleep",
+        "/v2/activity/sleep",
         {"start": "2024-01-01T00:00:00.000Z", "end": "2024-02-01T00:00:00.000Z"},
     )

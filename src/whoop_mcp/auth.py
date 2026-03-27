@@ -31,7 +31,7 @@ class WhoopTokenVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> AccessToken | None:
         async with httpx.AsyncClient(base_url=BASE_URL, timeout=10.0) as http:
             response = await http.get(
-                "/v1/user/profile/basic",
+                "/v2/user/profile/basic",
                 headers={"Authorization": f"Bearer {token}"},
             )
 

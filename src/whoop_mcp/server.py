@@ -34,6 +34,7 @@ def _build_auth() -> OAuthProxy | None:
         base_url=base_url,
         valid_scopes=WHOOP_SCOPES,
         forward_pkce=False,
+        token_endpoint_auth_method="client_secret_post",
     )
 
 
@@ -60,14 +61,14 @@ def _get_access_token() -> str:
 async def get_profile() -> dict:
     """Get the authenticated user's WHOOP profile (name, email)."""
     async with WhoopClient(_get_access_token()) as client:
-        return await client.get("/v1/user/profile/basic")
+        return await client.get("/v2/user/profile/basic")
 
 
 @mcp.tool
 async def get_body_measurement() -> dict:
     """Get the user's body measurements (height, weight, max heart rate)."""
     async with WhoopClient(_get_access_token()) as client:
-        return await client.get("/v1/user/measurement/body")
+        return await client.get("/v2/user/measurement/body")
 
 
 # ── Cycles ───────────────────────────────────────────────────────────────
@@ -89,15 +90,15 @@ async def get_cycles(
     params = _build_list_params(start, end, limit)
     async with WhoopClient(_get_access_token()) as client:
         if limit is not None:
-            return (await client.get("/v1/cycle", params)).get("records", [])
-        return await client.get_paginated("/v1/cycle", params)
+            return (await client.get("/v2/cycle", params)).get("records", [])
+        return await client.get_paginated("/v2/cycle", params)
 
 
 @mcp.tool
 async def get_cycle_by_id(cycle_id: str) -> dict:
     """Get a single physiological cycle by its ID."""
     async with WhoopClient(_get_access_token()) as client:
-        return await client.get(f"/v1/cycle/{cycle_id}")
+        return await client.get(f"/v2/cycle/{cycle_id}")
 
 
 # ── Recovery ─────────────────────────────────────────────────────────────
@@ -119,15 +120,15 @@ async def get_recovery_collection(
     params = _build_list_params(start, end, limit)
     async with WhoopClient(_get_access_token()) as client:
         if limit is not None:
-            return (await client.get("/v1/recovery", params)).get("records", [])
-        return await client.get_paginated("/v1/recovery", params)
+            return (await client.get("/v2/recovery", params)).get("records", [])
+        return await client.get_paginated("/v2/recovery", params)
 
 
 @mcp.tool
 async def get_recovery_by_id(cycle_id: str) -> dict:
     """Get a single recovery record by its associated cycle ID."""
     async with WhoopClient(_get_access_token()) as client:
-        return await client.get(f"/v1/recovery/{cycle_id}")
+        return await client.get(f"/v2/cycle/{cycle_id}/recovery")
 
 
 # ── Sleep ────────────────────────────────────────────────────────────────
@@ -149,15 +150,15 @@ async def get_sleep_collection(
     params = _build_list_params(start, end, limit)
     async with WhoopClient(_get_access_token()) as client:
         if limit is not None:
-            return (await client.get("/v1/sleep", params)).get("records", [])
-        return await client.get_paginated("/v1/sleep", params)
+            return (await client.get("/v2/activity/sleep", params)).get("records", [])
+        return await client.get_paginated("/v2/activity/sleep", params)
 
 
 @mcp.tool
 async def get_sleep_by_id(sleep_id: str) -> dict:
     """Get a single sleep record by its ID."""
     async with WhoopClient(_get_access_token()) as client:
-        return await client.get(f"/v1/sleep/{sleep_id}")
+        return await client.get(f"/v2/activity/sleep/{sleep_id}")
 
 
 # ── Workouts ─────────────────────────────────────────────────────────────
@@ -179,15 +180,15 @@ async def get_workout_collection(
     params = _build_list_params(start, end, limit)
     async with WhoopClient(_get_access_token()) as client:
         if limit is not None:
-            return (await client.get("/v1/workout", params)).get("records", [])
-        return await client.get_paginated("/v1/workout", params)
+            return (await client.get("/v2/activity/workout", params)).get("records", [])
+        return await client.get_paginated("/v2/activity/workout", params)
 
 
 @mcp.tool
 async def get_workout_by_id(workout_id: str) -> dict:
     """Get a single workout by its ID."""
     async with WhoopClient(_get_access_token()) as client:
-        return await client.get(f"/v1/workout/{workout_id}")
+        return await client.get(f"/v2/activity/workout/{workout_id}")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
