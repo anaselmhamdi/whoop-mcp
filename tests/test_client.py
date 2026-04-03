@@ -6,6 +6,7 @@ import respx
 
 from whoop_mcp.client import (
     BASE_URL,
+    TOKEN_URL,
     WhoopAPIError,
     WhoopClient,
     WhoopRateLimitError,
@@ -93,3 +94,75 @@ async def test_api_error_raises(whoop_client: WhoopClient):
 async def test_context_manager():
     async with WhoopClient("token") as client:
         assert client.access_token == "token"
+
+
+# ── Token refresh ───────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def refresh_client():
+    return WhoopClient(
+        "expired_token",
+        client_id="cid",
+        client_secret="csecret",
+        refresh_token="rtoken",
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_on_401(refresh_client: WhoopClient):
+    refreshed = {}
+
+    def on_refresh(access: str, refresh: str) -> None:
+        refreshed["access"] = access
+        refreshed["refresh"] = refresh
+
+    refresh_client._on_token_refresh = on_refresh
+
+    with respx.mock(base_url=BASE_URL) as api_mock:
+        route = api_mock.get("/v2/cycle").mock(
+            side_effect=[
+                httpx.Response(401, text="Unauthorized"),
+                httpx.Response(200, json={"records": []}),
+            ]
+        )
+        with respx.mock() as token_mock:
+            token_mock.post(TOKEN_URL).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "access_token": "new_access",
+                        "refresh_token": "new_refresh",
+                    },
+                )
+            )
+            result = await refresh_client.get("/v2/cycle")
+
+    assert result == {"records": []}
+    assert refresh_client.access_token == "new_access"
+    assert refreshed == {"access": "new_access", "refresh": "new_refresh"}
+
+
+@pytest.mark.asyncio
+async def test_refresh_failure_raises(refresh_client: WhoopClient):
+    with respx.mock(base_url=BASE_URL) as api_mock:
+        api_mock.get("/v2/cycle").mock(
+            return_value=httpx.Response(401, text="Unauthorized")
+        )
+        with respx.mock() as token_mock:
+            token_mock.post(TOKEN_URL).mock(
+                return_value=httpx.Response(400, text="invalid_grant")
+            )
+            with pytest.raises(WhoopAPIError, match="Token refresh failed"):
+                await refresh_client.get("/v2/cycle")
+
+
+@pytest.mark.asyncio
+async def test_no_refresh_without_credentials():
+    client = WhoopClient("expired_token")
+    with respx.mock(base_url=BASE_URL) as mock:
+        mock.get("/v2/cycle").mock(
+            return_value=httpx.Response(401, text="Unauthorized")
+        )
+        with pytest.raises(WhoopAPIError, match="401"):
+            await client.get("/v2/cycle")

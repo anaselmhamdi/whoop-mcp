@@ -43,16 +43,18 @@ On first connect, your browser will open for WHOOP login. After authorizing, the
 
 ### Local
 
-For local development, provide a WHOOP access token via env var:
+For local use (stdio mode), provide your WHOOP credentials in a `.env` file:
 
 ```bash
 cp .env.example .env
-# Fill in WHOOP_CLIENT_ID, WHOOP_CLIENT_SECRET, WHOOP_ACCESS_TOKEN
+# Fill in WHOOP_CLIENT_ID, WHOOP_CLIENT_SECRET, WHOOP_ACCESS_TOKEN, WHOOP_REFRESH_TOKEN
 ```
 
 ```bash
 uv run whoop-mcp
 ```
+
+Tokens refresh automatically — when the access token expires, the client uses the refresh token to get a new one and persists both tokens back to `.env`.
 
 **Claude Desktop** (local):
 
