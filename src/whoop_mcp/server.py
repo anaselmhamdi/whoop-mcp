@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv, set_key
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, OAuthProxy
 from fastmcp.server.dependencies import get_access_token
@@ -41,6 +41,21 @@ def _build_auth() -> OAuthProxy | None:
 mcp = FastMCP("whoop-mcp", auth=_build_auth())
 
 
+_local_access_token: str = os.environ.get("WHOOP_ACCESS_TOKEN", "")
+_local_refresh_token: str = os.environ.get("WHOOP_REFRESH_TOKEN", "")
+
+
+def _persist_tokens(access_token: str, refresh_token: str) -> None:
+    """Update in-memory state and .env file after a token refresh."""
+    global _local_access_token, _local_refresh_token
+    _local_access_token = access_token
+    _local_refresh_token = refresh_token
+    env_path = find_dotenv()
+    if env_path:
+        set_key(env_path, "WHOOP_ACCESS_TOKEN", access_token)
+        set_key(env_path, "WHOOP_REFRESH_TOKEN", refresh_token)
+
+
 def _get_access_token() -> str:
     """Get the WHOOP access token from auth context or env var."""
     token = get_access_token()
@@ -48,10 +63,25 @@ def _get_access_token() -> str:
         return token.token
 
     # Fallback for local stdio mode
-    access_token = os.environ.get("WHOOP_ACCESS_TOKEN", "")
-    if not access_token:
+    if not _local_access_token:
         raise RuntimeError("Not authenticated.")
-    return access_token
+    return _local_access_token
+
+
+def _refresh_kwargs() -> dict:
+    """Return WhoopClient kwargs for auto-refresh in local stdio mode."""
+    if get_access_token() is not None:
+        return {}
+    client_id = os.environ.get("WHOOP_CLIENT_ID", "")
+    client_secret = os.environ.get("WHOOP_CLIENT_SECRET", "")
+    if not client_id or not client_secret or not _local_refresh_token:
+        return {}
+    return {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": _local_refresh_token,
+        "on_token_refresh": _persist_tokens,
+    }
 
 
 # ── User ─────────────────────────────────────────────────────────────────
@@ -60,14 +90,14 @@ def _get_access_token() -> str:
 @mcp.tool
 async def get_profile() -> dict:
     """Get the authenticated user's WHOOP profile (name, email)."""
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         return await client.get("/v2/user/profile/basic")
 
 
 @mcp.tool
 async def get_body_measurement() -> dict:
     """Get the user's body measurements (height, weight, max heart rate)."""
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         return await client.get("/v2/user/measurement/body")
 
 
@@ -88,7 +118,7 @@ async def get_cycles(
         limit: Max number of records to return (default fetches all pages).
     """
     params = _build_list_params(start, end, limit)
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         if limit is not None:
             return (await client.get("/v2/cycle", params)).get("records", [])
         return await client.get_paginated("/v2/cycle", params)
@@ -97,7 +127,7 @@ async def get_cycles(
 @mcp.tool
 async def get_cycle_by_id(cycle_id: str) -> dict:
     """Get a single physiological cycle by its ID."""
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         return await client.get(f"/v2/cycle/{cycle_id}")
 
 
@@ -118,7 +148,7 @@ async def get_recovery_collection(
         limit: Max number of records to return (default fetches all pages).
     """
     params = _build_list_params(start, end, limit)
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         if limit is not None:
             return (await client.get("/v2/recovery", params)).get("records", [])
         return await client.get_paginated("/v2/recovery", params)
@@ -127,7 +157,7 @@ async def get_recovery_collection(
 @mcp.tool
 async def get_recovery_by_id(cycle_id: str) -> dict:
     """Get a single recovery record by its associated cycle ID."""
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         return await client.get(f"/v2/cycle/{cycle_id}/recovery")
 
 
@@ -148,7 +178,7 @@ async def get_sleep_collection(
         limit: Max number of records to return (default fetches all pages).
     """
     params = _build_list_params(start, end, limit)
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         if limit is not None:
             return (await client.get("/v2/activity/sleep", params)).get("records", [])
         return await client.get_paginated("/v2/activity/sleep", params)
@@ -157,7 +187,7 @@ async def get_sleep_collection(
 @mcp.tool
 async def get_sleep_by_id(sleep_id: str) -> dict:
     """Get a single sleep record by its ID."""
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         return await client.get(f"/v2/activity/sleep/{sleep_id}")
 
 
@@ -178,7 +208,7 @@ async def get_workout_collection(
         limit: Max number of records to return (default fetches all pages).
     """
     params = _build_list_params(start, end, limit)
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         if limit is not None:
             return (await client.get("/v2/activity/workout", params)).get("records", [])
         return await client.get_paginated("/v2/activity/workout", params)
@@ -187,7 +217,7 @@ async def get_workout_collection(
 @mcp.tool
 async def get_workout_by_id(workout_id: str) -> dict:
     """Get a single workout by its ID."""
-    async with WhoopClient(_get_access_token()) as client:
+    async with WhoopClient(_get_access_token(), **_refresh_kwargs()) as client:
         return await client.get(f"/v2/activity/workout/{workout_id}")
 
 
