@@ -13,6 +13,12 @@ primary_region = 'cdg'
   MCP_HOST = '0.0.0.0'
   MCP_PORT = '8080'
   BASE_URL = 'https://whoop.anas.link'
+  FASTMCP_HOME = '/data/fastmcp'
+
+# OAuth client registrations and upstream tokens live here, so claude.ai stays connected across machine restarts.
+[mounts]
+  source = 'whoop_mcp_data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
